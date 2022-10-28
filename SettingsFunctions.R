@@ -1,17 +1,24 @@
 createPatientLevelPredictionValidationModuleSpecifications <- function(
   modelLocationList, # a vector of plpModel locations
-  restrictPlpDataSettings = PatientLevelPrediction::createRestrictPlpDataSettings(),
-  validationSettings = PatientLevelPrediction::createValidationSettings(recalibrate = "weakRecalibration"),
-  targetId, # a vector
-  outcomeId # a vector
-  # add a population setting for a different tar?
+  validationComponentsList = list(
+    model1 = list(
+      component1 = list(
+      targetId = 1,
+      oucomeId = 2
+      #populationSettings = , # add a population setting for a different tar?
+      ), 
+      component2 = list(
+          targetId = 3,
+          oucomeId = 2
+          )
+    )
+  ),
+  restrictPlpDataSettings = PatientLevelPrediction::createRestrictPlpDataSettings(), # vector
+  validationSettings = PatientLevelPrediction::createValidationSettings(recalibrate = "weakRecalibration")
 ) {
   
-  if(missing(targetId)){
-    stop('targetId is needed')
-  }
-  if(missing(outcomeId)){
-    stop('outcomeId is needed')
+  if(length(modelLocationList) != length(validationComponentsList)){
+    stop('modelLocationList and validationComponentsList must be same length')
   }
   
   specifications <- list(
@@ -21,10 +28,9 @@ createPatientLevelPredictionValidationModuleSpecifications <- function(
     remoteUsername = "ohdsi",
     settings = list(
       modelLocationList = modelLocationList,
+      validationComponentsList = validationComponentsList,
       restrictPlpDataSettings = restrictPlpDataSettings,
-      validationSettings = validationSettings,
-      targetId = targetId,
-      outcomeId = outcomeId
+      validationSettings = validationSettings
     )
   )
   class(specifications) <- c("PatientLevelPredictionValidationModuleSpecifications", "ModuleSpecifications")

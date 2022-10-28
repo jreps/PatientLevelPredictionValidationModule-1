@@ -78,41 +78,7 @@ execute <- function(jobContext) {
   
   rlang::inform("Executing PLP Validation")
   moduleInfo <- getModuleInfo()
-  
-  # Creating database details list
-  
-  if(is.null(jobContext$settings$targetId)){
-    tLength <- 1
-  } else{
-    tLength <- length(jobContext$settings$targetId)
-  }
-  if(is.null(jobContext$settings$outcomeId)){
-    oLength <- 1
-  } else{
-    oLength <- length(jobContext$settings$outcomeId)
-  }  
-  
-  databaseDetails <- list()
-  ind <- 0
-  for(tind in 1:tLength){
-    for(oind in 1:oLength){ 
-      ind <- ind + 1
-      databaseDetails[[ind]] <- PatientLevelPrediction::createDatabaseDetails(
-        connectionDetails = jobContext$moduleExecutionSettings$connectionDetails, 
-        cdmDatabaseSchema = jobContext$moduleExecutionSettings$cdmDatabaseSchema,
-        cohortDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema,
-        cdmDatabaseName = paste0(jobContext$moduleExecutionSettings$connectionDetailsReference,'_T',tind,'_O',oind ),
-        cdmDatabaseId = jobContext$moduleExecutionSettings$databaseId,
-        #tempEmulationSchema =  , is there s temp schema specified anywhere?
-        cohortTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable, 
-        outcomeDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema, 
-        outcomeTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable, 
-        targetId = jobContext$settings$targetId[tind], # could make this a list
-        outcomeIds = jobContext$settings$outcomeId[oind] # could make this a list
-      )
-    }
-  }
-  
+
   # find where cohortDefinitions are as sharedResources is a list
   cohortDefinitionSet <- createCohortDefinitionSetFromJobContext(
     sharedResources = jobContext$sharedResources,
@@ -120,8 +86,12 @@ execute <- function(jobContext) {
     )
   
   # check the model locations are valid and apply model
+  upperWorkDir <- dirname(workFolder)
+  modelTransferFolder <- sort(dir(upperWorkDir, pattern = 'ModelTransferModule'), decreasing = T)[1]
+  
+  modelSaveLocation <- file.path( upperWorkDir, modelTransferFolder, 'models') # hack to use work folder for model transfer 
+  modelLocationList <- file.path(modelSaveLocation, jobContext$settings$modelLocationList)
 
-  modelLocationList <- jobContext$settings$modelLocationList
   
   modelInd <- 0
   for(modelLocation in modelLocationList){   
@@ -135,36 +105,57 @@ execute <- function(jobContext) {
       # append model ind to ensure analysis id is unique
       plpModel$trainDetails$analysisId <- paste0(plpModel$trainDetails$analysisId, '_', modelInd)
    
+      # create the database details:
+      databaseDetails <- list()
+      for(ddind in 1:length(jobContext$settings$validationComponentsList[[modelInd]])){
+        
+        tid <- jobContext$settings$validationComponentsList[[modelInd]]$targetId[ddind]
+        oid <- jobContext$settings$validationComponentsList[[modelInd]]$outcomeId[ddind]
+        
+          databaseDetails[[ddind]] <- PatientLevelPrediction::createDatabaseDetails(
+            connectionDetails = jobContext$moduleExecutionSettings$connectionDetails, 
+            cdmDatabaseSchema = jobContext$moduleExecutionSettings$cdmDatabaseSchema,
+            cohortDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema,
+            cdmDatabaseName = paste0(jobContext$moduleExecutionSettings$connectionDetailsReference,'_T',tid,'_O',oid ),
+            cdmDatabaseId = jobContext$moduleExecutionSettings$databaseId,
+            #tempEmulationSchema =  , is there s temp schema specified anywhere?
+            cohortTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable, 
+            outcomeDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema, 
+            outcomeTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable, 
+            targetId = tid, # could make this a list
+            outcomeIds = oid # could make this a list
+          )
+        }
+      
       PatientLevelPrediction::externalValidateDbPlp(
         plpModel = plpModel, 
         validationDatabaseDetails = databaseDetails, 
-        validationRestrictPlpDataSettings = jobContext$settings$restrictPlpDataSettings, 
-        settings = jobContext$settings$validationSettings, 
+        validationRestrictPlpDataSettings = jobContext$settings$restrictPlpDataSettings[[modelInd]], 
+        settings = jobContext$settings$validationSettings[[modelInd]], 
         #logSettings = , 
         outputFolder = workFolder
       )
+      
+      # move results into database
+      for(validationDatabaseDetail in databaseDetails){
+        tryCatch({
+          PatientLevelPrediction::insertResultsToSqlite(
+            resultLocation = file.path(workFolder, validationDatabaseDetail$cdmDatabaseName), 
+            cohortDefinitions = cohortDefinitionSet,
+            databaseList = PatientLevelPrediction::createDatabaseList(
+              cdmDatabaseSchemas = validationDatabaseDetail$cdmDatabaseSchema,
+              cdmDatabaseNames = validationDatabaseDetail$cdmDatabaseName,
+              databaseRefIds = validationDatabaseDetail$cdmDatabaseId 
+            ),
+            sqliteLocation = file.path(workFolder,'sqlite')
+          )
+        })
+      }
   
     } else{
       ParallelLogger::logInfo(paste0('Issue loading model at ', modelLocation))
     }
   }
-
-# move results into database
-for(validationDatabaseDetail in databaseDetails){
-  tryCatch({
-    PatientLevelPrediction::insertResultsToSqlite(
-      resultLocation = file.path(workFolder, validationDatabaseDetail$cdmDatabaseName), 
-      cohortDefinitions = cohortDefinitionSet,
-      databaseList = PatientLevelPrediction::createDatabaseList(
-        cdmDatabaseSchemas = validationDatabaseDetail$cdmDatabaseSchema,
-        cdmDatabaseNames = validationDatabaseDetail$cdmDatabaseName,
-        databaseRefIds = validationDatabaseDetail$cdmDatabaseId 
-      ),
-      sqliteLocation = file.path(workFolder,'sqlite')
-    )
-  })
-}
- 
 
   # Export the results
   rlang::inform("Export data to csv files")
