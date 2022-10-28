@@ -115,7 +115,7 @@ execute <- function(jobContext) {
   modelSaveLocation <- file.path( upperWorkDir, modelTransferFolder, 'models') # hack to use work folder for model transfer 
   modelLocationList <- file.path(modelSaveLocation, jobContext$settings$modelLocationList)
 
-  
+  databaseNames <- c()
   modelInd <- 0
   for(modelLocation in modelLocationList){   
     modelInd <- modelInd + 1
@@ -138,11 +138,12 @@ execute <- function(jobContext) {
       
       # create the database details:
       databaseDetails <- list()
-      for(ddind in 1:length(jobContext$settings$validationComponentsList[[modelInd]])){
-        
+      for(ddind in 1:max(1, length(jobContext$settings$validationComponentsList[[modelInd]]$targetId))){
+
         tid <- jobContext$settings$validationComponentsList[[modelInd]]$targetId[ddind]
         oid <- jobContext$settings$validationComponentsList[[modelInd]]$outcomeId[ddind]
         
+        databaseNames <- c(databaseNames, paste0(jobContext$moduleExecutionSettings$connectionDetailsReference,'_T',tid,'_O',oid ))
 
           databaseDetails[[ddind]] <- PatientLevelPrediction::createDatabaseDetails(
             connectionDetails = jobContext$moduleExecutionSettings$connectionDetails, 
@@ -167,26 +168,27 @@ execute <- function(jobContext) {
         #logSettings = , 
         outputFolder = workFolder
       )
-      
-      # move results into database
-      for(validationDatabaseDetail in databaseDetails){
-        tryCatch({
-          PatientLevelPrediction::insertResultsToSqlite(
-            resultLocation = file.path(workFolder, validationDatabaseDetail$cdmDatabaseName), 
-            cohortDefinitions = cohortDefinitionSet,
-            databaseList = PatientLevelPrediction::createDatabaseList(
-              cdmDatabaseSchemas = validationDatabaseDetail$cdmDatabaseSchema,
-              cdmDatabaseNames = validationDatabaseDetail$cdmDatabaseName,
-              databaseRefIds = validationDatabaseDetail$cdmDatabaseId 
-            ),
-            sqliteLocation = file.path(workFolder,'sqlite')
-          )
-        })
-      }
-  
+
     } else{
       ParallelLogger::logInfo(paste0('Issue loading model at ', modelLocation))
     }
+  }
+  
+  # save results into sqlite
+  # move results into database
+  for(databaseName in unique(databaseNames)){
+    tryCatch({
+      PatientLevelPrediction::insertResultsToSqlite(
+        resultLocation = file.path(workFolder, databaseName), 
+        cohortDefinitions = cohortDefinitionSet,
+        #databaseList = PatientLevelPrediction::createDatabaseList(
+        #  cdmDatabaseSchemas = validationDatabaseDetail$cdmDatabaseSchema,
+        #  cdmDatabaseNames = validationDatabaseDetail$cdmDatabaseName,
+        #  databaseRefIds = validationDatabaseDetail$cdmDatabaseId 
+        #),
+        sqliteLocation = file.path(workFolder,'sqlite')
+      )
+    })
   }
 
   # Export the results

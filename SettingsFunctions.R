@@ -1,18 +1,16 @@
 createPatientLevelPredictionValidationModuleSpecifications <- function(
   modelLocationList, # a vector of plpModel locations
   validationComponentsList = list(
-    model1 = list(
-      component1 = list(
-      targetId = 1,
-      oucomeId = 2
+    list(
+      targetId = c(1,1),
+      oucomeId = c(2,4)
       #populationSettings = , # add a population setting for a different tar?
       ), 
-      component2 = list(
+    list(
           targetId = 3,
           oucomeId = 2
           )
-    )
-  ),
+    ),
   restrictPlpDataSettings = PatientLevelPrediction::createRestrictPlpDataSettings(), # vector
   validationSettings = PatientLevelPrediction::createValidationSettings(recalibrate = "weakRecalibration")
 ) {
@@ -23,7 +21,7 @@ createPatientLevelPredictionValidationModuleSpecifications <- function(
   
   specifications <- list(
     module = "PatientLevelPredictionValidationModule",
-    version = "0.0.2",
+    version = "0.0.3",
     remoteRepo = "github.com",
     remoteUsername = "ohdsi",
     settings = list(
