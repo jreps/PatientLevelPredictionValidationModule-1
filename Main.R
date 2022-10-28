@@ -31,6 +31,29 @@ getSharedResourceByClassName <- function(sharedResources, className) {
   invisible(returnVal)
 }
 
+# this updates the cohort table details in covariates
+updateCovariates <- function(plpModel, cohortTable, cohortDatabaseSchema){
+  
+  covSettings <- plpModel$modelDesign$covariateSettings
+  # if a single setting make it into a list to force consistency
+  if(inherits(covSettings, 'covariateSettings')){
+    covSettings <- list(covSettings)
+  }
+  
+  for(i in 1:length(covSettings)){
+    if('cohortTable' %in% names(covSettings[[i]])){
+      covSettings[[i]]$cohortTable <- cohortTable
+    }
+    if('cohortDatabaseSchema' %in% names(covSettings[[i]])){
+      covSettings[[i]]$cohortDatabaseSchema <- cohortDatabaseSchema
+    }
+  }
+  
+  plpModel$modelDesign$covariateSettings <- covSettings
+  
+  return(plpModel)
+}
+
 createCohortDefinitionSetFromJobContext <- function(sharedResources, settings) {
   cohortDefinitions <- list()
   if (length(sharedResources) <= 0) {
@@ -105,6 +128,14 @@ execute <- function(jobContext) {
       # append model ind to ensure analysis id is unique
       plpModel$trainDetails$analysisId <- paste0(plpModel$trainDetails$analysisId, '_', modelInd)
    
+      # update the plpModel cohort covariates to replace the schema and cohortTable
+      # cohortDatabaseSchema, cohortTable
+      plpModel <- updateCovariates(
+        plpModel = plpModel,
+        cohortTable = jobContext$moduleExecutionSettings$cohortTableNames$cohortTable, 
+        cohortDatabaseSchema = jobContext$moduleExecutionSettings$workDatabaseSchema
+        )
+      
       # create the database details:
       databaseDetails <- list()
       for(ddind in 1:length(jobContext$settings$validationComponentsList[[modelInd]])){
@@ -112,6 +143,7 @@ execute <- function(jobContext) {
         tid <- jobContext$settings$validationComponentsList[[modelInd]]$targetId[ddind]
         oid <- jobContext$settings$validationComponentsList[[modelInd]]$outcomeId[ddind]
         
+
           databaseDetails[[ddind]] <- PatientLevelPrediction::createDatabaseDetails(
             connectionDetails = jobContext$moduleExecutionSettings$connectionDetails, 
             cdmDatabaseSchema = jobContext$moduleExecutionSettings$cdmDatabaseSchema,
